@@ -1,3 +1,4 @@
+# app.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -5,7 +6,6 @@ import random
 import string
 import time
 import re
-import os
 
 app = Flask(__name__)
 CORS(app)
@@ -28,7 +28,6 @@ def send_register_code_email(email):
     """Send registration code request to Garena."""
     url = "https://authgop.garena.com/api/send_register_code_email"
     
-    # Headers exactly as in the provided request
     headers = {
         "Host": "authgop.garena.com",
         "Connection": "keep-alive",
@@ -48,11 +47,9 @@ def send_register_code_email(email):
         "Cookie": "_ga=GA1.1.868059803.1775926376; _ga_XB5PSHEQB4=GS2.1.s1775926375$o1$g1$t1775926378$j57$l0$h0; datadome=piPnlDyb63lxNPgE~RUOGoABXAAwgxiBV8pMUCVyDvaNK_SK5uvOTRikR~zsTIAAc5En_D133T364K7yxCfNS5YjVc3AKPIKU45GRmXGgJAoBnDU~rQ1xHE4esKMwfrh"
     }
     
-    # Generate random username and id
     username = generate_username()
     request_id = get_timestamp_id()
     
-    # Form data
     data = {
         "username": username,
         "email": email,
@@ -84,68 +81,76 @@ def home():
         "version": "1.0",
         "status": "active",
         "endpoints": {
-            "/email_otp": "POST - Send OTP to email (body: email)",
-            "/email_otp/<email>": "GET - Send OTP to email via URL parameter",
-            "/email_otp?email=test@example.com": "GET - Send OTP via query parameter"
+            "POST /email_otp": "Send OTP with email in JSON body",
+            "GET /email_otp/<email>": "Send OTP with email in URL",
+            "GET /email_otp?email=test@example.com": "Send OTP with query parameter"
         },
-        "example": {
+        "examples": {
             "post": "curl -X POST https://your-domain.vercel.app/email_otp -H 'Content-Type: application/json' -d '{\"email\":\"user@example.com\"}'",
-            "get": "curl https://your-domain.vercel.app/email_otp/user@example.com"
+            "get_url": "curl https://your-domain.vercel.app/email_otp/user@example.com",
+            "get_query": "curl 'https://your-domain.vercel.app/email_otp?email=user@example.com'"
         }
     })
 
-@app.route('/email_otp', methods=['POST'])
-def send_otp_post():
-    """Send OTP via POST request with JSON body."""
-    try:
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({
-                "success": False,
-                "error": "Invalid JSON body"
-            }), 400
-        
-        email = data.get('email')
-        
-        if not email:
-            return jsonify({
-                "success": False,
-                "error": "Email is required"
-            }), 400
-        
-        if not validate_email(email):
-            return jsonify({
-                "success": False,
-                "error": "Invalid email format"
-            }), 400
-        
-        result = send_register_code_email(email)
-        
-        if result["success"]:
-            return jsonify({
-                "success": True,
-                "message": "OTP sent successfully",
-                "email": email,
-                "username": result.get("username"),
-                "request_id": result.get("request_id"),
-                "response": result.get("response")
-            }), 200
-        else:
-            return jsonify({
-                "success": False,
-                "error": result.get("error", "Failed to send OTP"),
-                "status_code": result.get("status_code")
-            }), 500
+@app.route('/email_otp', methods=['POST', 'GET'])
+def send_otp():
+    """Handle both POST and GET requests for OTP."""
+    
+    # Handle POST request
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    "success": False,
+                    "error": "Invalid JSON body"
+                }), 400
             
-    except Exception as e:
+            email = data.get('email')
+        except:
+            return jsonify({
+                "success": False,
+                "error": "Invalid JSON format"
+            }), 400
+    
+    # Handle GET request with query parameter
+    else:
+        email = request.args.get('email')
+    
+    # Validate email
+    if not email:
         return jsonify({
             "success": False,
-            "error": str(e)
+            "error": "Email is required. Use ?email=example@domain.com for GET or JSON body for POST"
+        }), 400
+    
+    if not validate_email(email):
+        return jsonify({
+            "success": False,
+            "error": "Invalid email format"
+        }), 400
+    
+    # Send OTP
+    result = send_register_code_email(email)
+    
+    if result["success"]:
+        return jsonify({
+            "success": True,
+            "message": "OTP sent successfully",
+            "email": email,
+            "username": result.get("username"),
+            "request_id": result.get("request_id"),
+            "response": result.get("response")
+        }), 200
+    else:
+        return jsonify({
+            "success": False,
+            "error": result.get("error", "Failed to send OTP"),
+            "status_code": result.get("status_code")
         }), 500
 
 @app.route('/email_otp/<email>', methods=['GET'])
-def send_otp_get(email):
+def send_otp_url(email):
     """Send OTP via GET request with email in URL."""
     if not email:
         return jsonify({
@@ -177,46 +182,17 @@ def send_otp_get(email):
             "status_code": result.get("status_code")
         }), 500
 
-@app.route('/email_otp', methods=['GET'])
-def send_otp_get_param():
-    """Send OTP via GET request with query parameter."""
-    email = request.args.get('email')
-    
-    if not email:
-        return jsonify({
-            "success": False,
-            "error": "Email parameter is required. Use ?email=example@domain.com"
-        }), 400
-    
-    if not validate_email(email):
-        return jsonify({
-            "success": False,
-            "error": "Invalid email format"
-        }), 400
-    
-    result = send_register_code_email(email)
-    
-    if result["success"]:
-        return jsonify({
-            "success": True,
-            "message": "OTP sent successfully",
-            "email": email,
-            "username": result.get("username"),
-            "request_id": result.get("request_id"),
-            "response": result.get("response")
-        }), 200
-    else:
-        return jsonify({
-            "success": False,
-            "error": result.get("error", "Failed to send OTP"),
-            "status_code": result.get("status_code")
-        }), 500
-
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({
         "success": False,
-        "error": "Endpoint not found"
+        "error": "Endpoint not found",
+        "available_endpoints": [
+            "/",
+            "/email_otp (POST with JSON body)",
+            "/email_otp?email=test@example.com (GET with query param)",
+            "/email_otp/test@example.com (GET with URL param)"
+        ]
     }), 404
 
 @app.errorhandler(500)
@@ -226,9 +202,8 @@ def internal_error(error):
         "error": "Internal server error"
     }), 500
 
-# Vercel requires the app to be exported as 'app'
+# Vercel requires this
 app = app
 
-# For local development
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
